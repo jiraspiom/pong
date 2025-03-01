@@ -2,11 +2,11 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Pong Multiplayer com WebRTC</title>
+    <title>Pong Multiplayer</title>
     <style>
         body {
             margin: 0;
-            padding: 20px;
+            padding: 0;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -25,18 +25,19 @@
         
         .controls {
             display: flex;
-            flex-direction: column;
-            align-items: center;
-            width: 100%;
-            max-width: 600px;
+            justify-content: space-between;
+            width: 600px;
             margin-bottom: 20px;
+        }
+        
+        .player-controls {
+            text-align: center;
         }
         
         .score {
             display: flex;
             justify-content: space-around;
-            width: 100%;
-            max-width: 600px;
+            width: 600px;
             font-size: 24px;
             margin-bottom: 10px;
         }
@@ -55,297 +56,182 @@
             background-color: #666;
         }
         
-        #connection-info {
-            margin: 20px 0;
-            padding: 15px;
-            background-color: #333;
-            border-radius: 5px;
-            width: 100%;
-            max-width: 600px;
+        .game-container {
+            position: relative;
         }
         
-        #connection-controls {
+        .player-area {
+            position: absolute;
+            width: 100%;
+            height: 50px;
             display: flex;
-            flex-direction: column;
-            gap: 10px;
-            width: 100%;
-            max-width: 600px;
+            justify-content: space-between;
         }
         
-        input {
-            padding: 10px;
-            font-size: 16px;
-            background-color: #444;
-            color: white;
-            border: none;
-            width: 100%;
+        .player-area.top {
+            top: 10px;
         }
         
-        .status {
-            margin-top: 20px;
-            padding: 10px;
-            background-color: #333;
+        .player-area.bottom {
+            bottom: 10px;
+        }
+        
+        .control-btn {
+            width: 100px;
+            height: 40px;
+            background-color: rgba(255, 255, 255, 0.2);
             border-radius: 5px;
-            text-align: center;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
         }
         
-        .hidden {
-            display: none;
+        .control-btn:active {
+            background-color: rgba(255, 255, 255, 0.4);
         }
     </style>
 </head>
 <body>
-    <h1>Pong Multiplayer com WebRTC</h1>
+    <h1>Pong Multiplayer</h1>
     
     <div class="score">
-        <div>Você: <span id="player-score">0</span></div>
-        <div>Oponente: <span id="opponent-score">0</span></div>
+        <div>Jogador 1: <span id="player1-score">0</span></div>
+        <div>Jogador 2: <span id="player2-score">0</span></div>
     </div>
     
-    <canvas id="pong-canvas" width="600" height="400"></canvas>
-    
-    <div id="game-controls" class="controls hidden">
-        <p>Use as teclas para CIMA e para BAIXO para mover sua raquete</p>
-        <button id="reset-btn">Reiniciar</button>
-    </div>
-    
-    <div id="connection-controls">
-        <div id="host-controls">
-            <h3>Criar uma nova sala</h3>
-            <button id="create-game-btn">Criar sala</button>
-            <div id="room-info" class="hidden">
-                <p>Compartilhe este código com seu amigo:</p>
-                <input type="text" id="connection-id" readonly>
-                <button id="copy-id-btn">Copiar</button>
-            </div>
+    <div class="game-container">
+        <canvas id="pong-canvas" width="600" height="400"></canvas>
+        
+        <!-- Controles jogador 1 (topo) -->
+        <div class="player-area top">
+            <div class="control-btn" id="player1-left">◀ Esquerda</div>
+            <div class="control-btn" id="player1-right">Direita ▶</div>
         </div>
         
-        <div id="join-controls">
-            <h3>Entrar em uma sala existente</h3>
-            <input type="text" id="remote-connection-id" placeholder="Cole o código aqui...">
-            <button id="join-game-btn">Conectar</button>
+        <!-- Controles jogador 2 (baixo) -->
+        <div class="player-area bottom">
+            <div class="control-btn" id="player2-left">◀ Esquerda</div>
+            <div class="control-btn" id="player2-right">Direita ▶</div>
         </div>
     </div>
     
-    <div id="status-message" class="status hidden"></div>
-
-    <!-- Carregar bibliotecas necessárias -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.4.7/peerjs.min.js"></script>
+    <div class="controls">
+        <div class="player-controls">
+            <h3>Jogador 1</h3>
+            <p>Use os botões acima</p>
+        </div>
+        
+        <div>
+            <button id="start-btn">Iniciar Jogo</button>
+            <button id="reset-btn">Reiniciar</button>
+        </div>
+        
+        <div class="player-controls">
+            <h3>Jogador 2</h3>
+            <p>Use os botões abaixo</p>
+        </div>
+    </div>
     
     <script>
         // Elementos do DOM
         const canvas = document.getElementById('pong-canvas');
         const ctx = canvas.getContext('2d');
+        const startBtn = document.getElementById('start-btn');
         const resetBtn = document.getElementById('reset-btn');
-        const playerScoreElement = document.getElementById('player-score');
-        const opponentScoreElement = document.getElementById('opponent-score');
-        const createGameBtn = document.getElementById('create-game-btn');
-        const joinGameBtn = document.getElementById('join-game-btn');
-        const connectionIdElement = document.getElementById('connection-id');
-        const remoteConnectionIdElement = document.getElementById('remote-connection-id');
-        const copyIdBtn = document.getElementById('copy-id-btn');
-        const roomInfoElement = document.getElementById('room-info');
-        const connectionControlsElement = document.getElementById('connection-controls');
-        const gameControlsElement = document.getElementById('game-controls');
-        const statusMessageElement = document.getElementById('status-message');
+        const player1ScoreElement = document.getElementById('player1-score');
+        const player2ScoreElement = document.getElementById('player2-score');
+        
+        // Botões de controle
+        const player1LeftBtn = document.getElementById('player1-left');
+        const player1RightBtn = document.getElementById('player1-right');
+        const player2LeftBtn = document.getElementById('player2-left');
+        const player2RightBtn = document.getElementById('player2-right');
         
         // Variáveis do jogo
         let gameRunning = false;
         let animationFrameId;
-        let isHost = false;
-        let peer;
-        let connection;
-        let lastUpdateTime = 0;
         
         // Configurações do jogo
-        const paddleWidth = 10;
-        const paddleHeight = 80;
+        const paddleWidth = 100;
+        const paddleHeight = 10;
         const ballSize = 12;
         const paddleSpeed = 8;
         
         // Estado do jogo
         let gameState = {
-            localPlayer: {
-                y: canvas.height / 2 - paddleHeight / 2,
+            player1: {
+                x: canvas.width / 2 - paddleWidth / 2,
+                y: 20,
                 score: 0,
-                moveUp: false,
-                moveDown: false
+                moveLeft: false,
+                moveRight: false
             },
-            remotePlayer: {
-                y: canvas.height / 2 - paddleHeight / 2,
-                score: 0
+            player2: {
+                x: canvas.width / 2 - paddleWidth / 2,
+                y: canvas.height - 20 - paddleHeight,
+                score: 0,
+                moveLeft: false,
+                moveRight: false
             },
             ball: {
                 x: canvas.width / 2,
                 y: canvas.height / 2,
-                speedX: 5,
-                speedY: 5,
+                speedX: 4,
+                speedY: 4,
                 reset: function() {
                     this.x = canvas.width / 2;
                     this.y = canvas.height / 2;
-                    this.speedX = Math.random() > 0.5 ? 5 : -5;
-                    this.speedY = Math.random() * 10 - 5;
+                    this.speedX = (Math.random() > 0.5 ? 1 : -1) * 4;
+                    this.speedY = (Math.random() > 0.5 ? 1 : -1) * 4;
                 }
             }
         };
         
+        // Event listeners para mouse/touch
+        player1LeftBtn.addEventListener('mousedown', () => { gameState.player1.moveLeft = true; });
+        player1LeftBtn.addEventListener('mouseup', () => { gameState.player1.moveLeft = false; });
+        player1LeftBtn.addEventListener('mouseleave', () => { gameState.player1.moveLeft = false; });
+        player1LeftBtn.addEventListener('touchstart', () => { gameState.player1.moveLeft = true; });
+        player1LeftBtn.addEventListener('touchend', () => { gameState.player1.moveLeft = false; });
+        
+        player1RightBtn.addEventListener('mousedown', () => { gameState.player1.moveRight = true; });
+        player1RightBtn.addEventListener('mouseup', () => { gameState.player1.moveRight = false; });
+        player1RightBtn.addEventListener('mouseleave', () => { gameState.player1.moveRight = false; });
+        player1RightBtn.addEventListener('touchstart', () => { gameState.player1.moveRight = true; });
+        player1RightBtn.addEventListener('touchend', () => { gameState.player1.moveRight = false; });
+        
+        player2LeftBtn.addEventListener('mousedown', () => { gameState.player2.moveLeft = true; });
+        player2LeftBtn.addEventListener('mouseup', () => { gameState.player2.moveLeft = false; });
+        player2LeftBtn.addEventListener('mouseleave', () => { gameState.player2.moveLeft = false; });
+        player2LeftBtn.addEventListener('touchstart', () => { gameState.player2.moveLeft = true; });
+        player2LeftBtn.addEventListener('touchend', () => { gameState.player2.moveLeft = false; });
+        
+        player2RightBtn.addEventListener('mousedown', () => { gameState.player2.moveRight = true; });
+        player2RightBtn.addEventListener('mouseup', () => { gameState.player2.moveRight = false; });
+        player2RightBtn.addEventListener('mouseleave', () => { gameState.player2.moveRight = false; });
+        player2RightBtn.addEventListener('touchstart', () => { gameState.player2.moveRight = true; });
+        player2RightBtn.addEventListener('touchend', () => { gameState.player2.moveRight = false; });
+        
         // Controles do teclado
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'ArrowUp') {
-                gameState.localPlayer.moveUp = true;
-                
-                if (connection && connection.open) {
-                    connection.send({
-                        type: 'playerMove',
-                        moveUp: true,
-                        moveDown: false
-                    });
-                }
-            }
-            if (e.key === 'ArrowDown') {
-                gameState.localPlayer.moveDown = true;
-                
-                if (connection && connection.open) {
-                    connection.send({
-                        type: 'playerMove',
-                        moveUp: false,
-                        moveDown: true
-                    });
-                }
+            switch(e.key) {
+                case 'a': gameState.player1.moveLeft = true; break;
+                case 'd': gameState.player1.moveRight = true; break;
+                case 'ArrowLeft': gameState.player2.moveLeft = true; break;
+                case 'ArrowRight': gameState.player2.moveRight = true; break;
             }
         });
         
         document.addEventListener('keyup', (e) => {
-            if (e.key === 'ArrowUp') {
-                gameState.localPlayer.moveUp = false;
-                
-                if (connection && connection.open) {
-                    connection.send({
-                        type: 'playerMove',
-                        moveUp: false,
-                        moveDown: gameState.localPlayer.moveDown
-                    });
-                }
-            }
-            if (e.key === 'ArrowDown') {
-                gameState.localPlayer.moveDown = false;
-                
-                if (connection && connection.open) {
-                    connection.send({
-                        type: 'playerMove',
-                        moveUp: gameState.localPlayer.moveUp,
-                        moveDown: false
-                    });
-                }
+            switch(e.key) {
+                case 'a': gameState.player1.moveLeft = false; break;
+                case 'd': gameState.player1.moveRight = false; break;
+                case 'ArrowLeft': gameState.player2.moveLeft = false; break;
+                case 'ArrowRight': gameState.player2.moveRight = false; break;
             }
         });
-        
-        // Funções WebRTC
-        function initPeer() {
-            // Criar um novo peer com ID aleatório
-            peer = new Peer();
-            
-            peer.on('open', (id) => {
-                connectionIdElement.value = id;
-                showStatus("Peer conectado! ID: " + id, false);
-            });
-            
-            peer.on('connection', (conn) => {
-                connection = conn;
-                handleConnection();
-            });
-            
-            peer.on('error', (err) => {
-                console.error(err);
-                showStatus("Erro de conexão: " + err.message, true);
-            });
-        }
-        
-        function createGame() {
-            initPeer();
-            isHost = true;
-            roomInfoElement.classList.remove('hidden');
-            showStatus("Aguardando oponente se conectar...", false);
-        }
-        
-        function joinGame() {
-            if (!peer) {
-                initPeer();
-            }
-            
-            const remoteId = remoteConnectionIdElement.value.trim();
-            if (!remoteId) {
-                showStatus("Por favor, cole o código de conexão!", true);
-                return;
-            }
-            
-            connection = peer.connect(remoteId);
-            isHost = false;
-            
-            showStatus("Conectando ao oponente...", false);
-            
-            handleConnection();
-        }
-        
-        function handleConnection() {
-            connection.on('open', () => {
-                // Conexão estabelecida
-                showStatus("Conectado ao oponente!", false);
-                startGame();
-            });
-            
-            connection.on('data', (data) => {
-                handleMessage(data);
-            });
-            
-            connection.on('close', () => {
-                showStatus("Oponente desconectado", true);
-                resetGame();
-                gameRunning = false;
-                connectionControlsElement.classList.remove('hidden');
-                gameControlsElement.classList.add('hidden');
-            });
-            
-            connection.on('error', (err) => {
-                console.error(err);
-                showStatus("Erro de conexão: " + err.message, true);
-            });
-        }
-        
-        function handleMessage(data) {
-            switch(data.type) {
-                case 'playerMove':
-                    // Atualizar movimento do oponente
-                    gameState.remotePlayer.moveUp = data.moveUp;
-                    gameState.remotePlayer.moveDown = data.moveDown;
-                    break;
-                case 'ballPos':
-                    // Atualizar posição da bola (apenas se não for o host)
-                    if (!isHost) {
-                        gameState.ball.x = canvas.width - data.x;
-                        gameState.ball.y = data.y;
-                    }
-                    break;
-                case 'score':
-                    // Atualizar placar
-                    gameState.localPlayer.score = data.opponentScore;
-                    gameState.remotePlayer.score = data.playerScore;
-                    playerScoreElement.textContent = gameState.localPlayer.score;
-                    opponentScoreElement.textContent = gameState.remotePlayer.score;
-                    break;
-                case 'reset':
-                    // Reiniciar jogo
-                    resetGame();
-                    break;
-                case 'startGame':
-                    // Começar jogo (apenas para quem não é host)
-                    if (!isHost) {
-                        gameRunning = true;
-                        gameLoop();
-                    }
-                    break;
-            }
-        }
         
         // Renderizar o jogo
         function render() {
@@ -356,25 +242,16 @@
             // Desenhar linha do meio
             ctx.setLineDash([10, 10]);
             ctx.beginPath();
-            ctx.moveTo(canvas.width / 2, 0);
-            ctx.lineTo(canvas.width / 2, canvas.height);
+            ctx.moveTo(0, canvas.height / 2);
+            ctx.lineTo(canvas.width, canvas.height / 2);
             ctx.strokeStyle = 'white';
             ctx.stroke();
             ctx.setLineDash([]);
             
             // Desenhar os paddles
             ctx.fillStyle = 'white';
-            
-            // Desenhar paddle de acordo com quem é o host
-            if (isHost) {
-                // Host fica à esquerda
-                ctx.fillRect(0, gameState.localPlayer.y, paddleWidth, paddleHeight);
-                ctx.fillRect(canvas.width - paddleWidth, gameState.remotePlayer.y, paddleWidth, paddleHeight);
-            } else {
-                // Jogador que se conectou fica à direita
-                ctx.fillRect(0, gameState.remotePlayer.y, paddleWidth, paddleHeight);
-                ctx.fillRect(canvas.width - paddleWidth, gameState.localPlayer.y, paddleWidth, paddleHeight);
-            }
+            ctx.fillRect(gameState.player1.x, gameState.player1.y, paddleWidth, paddleHeight);
+            ctx.fillRect(gameState.player2.x, gameState.player2.y, paddleWidth, paddleHeight);
             
             // Desenhar a bola
             ctx.beginPath();
@@ -384,117 +261,70 @@
         
         // Atualizar o estado do jogo
         function update() {
-            const now = Date.now();
-            const dt = now - lastUpdateTime;
-            lastUpdateTime = now;
-            
-            // Mover o paddle local
-            if (gameState.localPlayer.moveUp && gameState.localPlayer.y > 0) {
-                gameState.localPlayer.y -= paddleSpeed;
+            // Mover paddles
+            if (gameState.player1.moveLeft && gameState.player1.x > 0) {
+                gameState.player1.x -= paddleSpeed;
             }
-            if (gameState.localPlayer.moveDown && gameState.localPlayer.y < canvas.height - paddleHeight) {
-                gameState.localPlayer.y += paddleSpeed;
+            if (gameState.player1.moveRight && gameState.player1.x < canvas.width - paddleWidth) {
+                gameState.player1.x += paddleSpeed;
             }
             
-            // Mover o paddle remoto
-            if (gameState.remotePlayer.moveUp && gameState.remotePlayer.y > 0) {
-                gameState.remotePlayer.y -= paddleSpeed;
+            if (gameState.player2.moveLeft && gameState.player2.x > 0) {
+                gameState.player2.x -= paddleSpeed;
             }
-            if (gameState.remotePlayer.moveDown && gameState.remotePlayer.y < canvas.height - paddleHeight) {
-                gameState.remotePlayer.y += paddleSpeed;
+            if (gameState.player2.moveRight && gameState.player2.x < canvas.width - paddleWidth) {
+                gameState.player2.x += paddleSpeed;
             }
             
-            // Apenas o host processa a física da bola
-            if (isHost) {
-                // Mover a bola
-                gameState.ball.x += gameState.ball.speedX;
-                gameState.ball.y += gameState.ball.speedY;
+            // Mover a bola
+            gameState.ball.x += gameState.ball.speedX;
+            gameState.ball.y += gameState.ball.speedY;
+            
+            // Colisão com as paredes laterais
+            if (gameState.ball.x < ballSize / 2 || gameState.ball.x > canvas.width - ballSize / 2) {
+                gameState.ball.speedX = -gameState.ball.speedX;
+            }
+            
+            // Colisão com o paddle superior (player 1)
+            if (
+                gameState.ball.y - ballSize / 2 < gameState.player1.y + paddleHeight && 
+                gameState.ball.y > gameState.player1.y &&
+                gameState.ball.x > gameState.player1.x && 
+                gameState.ball.x < gameState.player1.x + paddleWidth
+            ) {
+                gameState.ball.speedY = Math.abs(gameState.ball.speedY);
                 
-                // Enviar posição da bola para o outro jogador
-                if (connection && connection.open) {
-                    connection.send({
-                        type: 'ballPos',
-                        x: gameState.ball.x,
-                        y: gameState.ball.y
-                    });
-                }
+                // Modificar o ângulo com base na posição do paddle
+                const hitPos = (gameState.ball.x - gameState.player1.x) / paddleWidth;
+                gameState.ball.speedX = 8 * (hitPos - 0.5);
+            }
+            
+            // Colisão com o paddle inferior (player 2)
+            if (
+                gameState.ball.y + ballSize / 2 > gameState.player2.y && 
+                gameState.ball.y < gameState.player2.y + paddleHeight &&
+                gameState.ball.x > gameState.player2.x && 
+                gameState.ball.x < gameState.player2.x + paddleWidth
+            ) {
+                gameState.ball.speedY = -Math.abs(gameState.ball.speedY);
                 
-                // Colisão com as bordas horizontais
-                if (gameState.ball.y < ballSize / 2 || gameState.ball.y > canvas.height - ballSize / 2) {
-                    gameState.ball.speedY = -gameState.ball.speedY;
-                }
-                
-                // Colisão com o paddle esquerdo (host)
-                if (
-                    gameState.ball.x - ballSize / 2 < paddleWidth && 
-                    gameState.ball.y > gameState.localPlayer.y && 
-                    gameState.ball.y < gameState.localPlayer.y + paddleHeight
-                ) {
-                    gameState.ball.speedX = -gameState.ball.speedX;
-                    
-                    // Modificar o ângulo com base na posição do paddle
-                    const relativeIntersectY = (gameState.localPlayer.y + (paddleHeight / 2)) - gameState.ball.y;
-                    const normalizedRelativeIntersectionY = relativeIntersectY / (paddleHeight / 2);
-                    const bounceAngle = normalizedRelativeIntersectionY * (Math.PI / 4);
-                    
-                    gameState.ball.speedY = -Math.sin(bounceAngle) * Math.abs(gameState.ball.speedX);
-                    
-                    // Acelerar a bola ligeiramente
-                    gameState.ball.speedX *= 1.05;
-                }
-                
-                // Colisão com o paddle direito (remoto)
-                if (
-                    gameState.ball.x + ballSize / 2 > canvas.width - paddleWidth && 
-                    gameState.ball.y > gameState.remotePlayer.y && 
-                    gameState.ball.y < gameState.remotePlayer.y + paddleHeight
-                ) {
-                    gameState.ball.speedX = -gameState.ball.speedX;
-                    
-                    // Modificar o ângulo com base na posição do paddle
-                    const relativeIntersectY = (gameState.remotePlayer.y + (paddleHeight / 2)) - gameState.ball.y;
-                    const normalizedRelativeIntersectionY = relativeIntersectY / (paddleHeight / 2);
-                    const bounceAngle = normalizedRelativeIntersectionY * (Math.PI / 4);
-                    
-                    gameState.ball.speedY = -Math.sin(bounceAngle) * Math.abs(gameState.ball.speedX);
-                    
-                    // Acelerar a bola ligeiramente
-                    gameState.ball.speedX *= 1.05;
-                }
-                
-                // Se a bola sair pela esquerda (ponto para o player remoto)
-                if (gameState.ball.x < 0) {
-                    gameState.remotePlayer.score++;
-                    opponentScoreElement.textContent = gameState.remotePlayer.score;
-                    
-                    // Enviar atualização de score
-                    if (connection && connection.open) {
-                        connection.send({
-                            type: 'score',
-                            playerScore: gameState.localPlayer.score,
-                            opponentScore: gameState.remotePlayer.score
-                        });
-                    }
-                    
-                    gameState.ball.reset();
-                }
-                
-                // Se a bola sair pela direita (ponto para o host)
-                if (gameState.ball.x > canvas.width) {
-                    gameState.localPlayer.score++;
-                    playerScoreElement.textContent = gameState.localPlayer.score;
-                    
-                    // Enviar atualização de score
-                    if (connection && connection.open) {
-                        connection.send({
-                            type: 'score',
-                            playerScore: gameState.localPlayer.score,
-                            opponentScore: gameState.remotePlayer.score
-                        });
-                    }
-                    
-                    gameState.ball.reset();
-                }
+                // Modificar o ângulo com base na posição do paddle
+                const hitPos = (gameState.ball.x - gameState.player2.x) / paddleWidth;
+                gameState.ball.speedX = 8 * (hitPos - 0.5);
+            }
+            
+            // Se a bola sair por cima (ponto para o player 2)
+            if (gameState.ball.y < 0) {
+                gameState.player2.score++;
+                player2ScoreElement.textContent = gameState.player2.score;
+                gameState.ball.reset();
+            }
+            
+            // Se a bola sair por baixo (ponto para o player 1)
+            if (gameState.ball.y > canvas.height) {
+                gameState.player1.score++;
+                player1ScoreElement.textContent = gameState.player1.score;
+                gameState.ball.reset();
             }
         }
         
@@ -508,67 +338,32 @@
         }
         
         // Iniciar o jogo
-        function startGame() {
-            connectionControlsElement.classList.add('hidden');
-            gameControlsElement.classList.remove('hidden');
-            resetGame();
-            gameRunning = true;
-            lastUpdateTime = Date.now();
-            
-            // Se for o host, enviar mensagem para iniciar o jogo
-            if (isHost && connection && connection.open) {
-                connection.send({
-                    type: 'startGame'
-                });
+        startBtn.addEventListener('click', () => {
+            if (!gameRunning) {
+                gameRunning = true;
+                startBtn.textContent = 'Pausar';
+                gameLoop();
+            } else {
+                gameRunning = false;
+                startBtn.textContent = 'Continuar';
+                cancelAnimationFrame(animationFrameId);
             }
-            
-            gameLoop();
-        }
-        
-        // Reiniciar o jogo
-        function resetGame() {
-            gameState.localPlayer.y = canvas.height / 2 - paddleHeight / 2;
-            gameState.remotePlayer.y = canvas.height / 2 - paddleHeight / 2;
-            gameState.localPlayer.score = 0;
-            gameState.remotePlayer.score = 0;
-            playerScoreElement.textContent = '0';
-            opponentScoreElement.textContent = '0';
-            gameState.ball.reset();
-            
-            // Enviar evento de reset
-            if (connection && connection.open) {
-                connection.send({
-                    type: 'reset'
-                });
-            }
-            
-            render();
-        }
-        
-        // Mostrar mensagem de status
-        function showStatus(message, isError) {
-            statusMessageElement.textContent = message;
-            statusMessageElement.style.backgroundColor = isError ? '#d32f2f' : '#333';
-            statusMessageElement.classList.remove('hidden');
-            
-            if (!isError) {
-                setTimeout(() => {
-                    statusMessageElement.classList.add('hidden');
-                }, 5000);
-            }
-        }
-        
-        // Copiar ID para a área de transferência
-        copyIdBtn.addEventListener('click', () => {
-            connectionIdElement.select();
-            document.execCommand('copy');
-            showStatus('Código copiado para a área de transferência!', false);
         });
         
-        // Event listeners
-        createGameBtn.addEventListener('click', createGame);
-        joinGameBtn.addEventListener('click', joinGame);
-        resetBtn.addEventListener('click', resetGame);
+        // Reiniciar o jogo
+        resetBtn.addEventListener('click', () => {
+            gameState.player1.x = canvas.width / 2 - paddleWidth / 2;
+            gameState.player2.x = canvas.width / 2 - paddleWidth / 2;
+            gameState.player1.score = 0;
+            gameState.player2.score = 0;
+            player1ScoreElement.textContent = '0';
+            player2ScoreElement.textContent = '0';
+            gameState.ball.reset();
+            
+            if (!gameRunning) {
+                render();
+            }
+        });
         
         // Renderização inicial
         render();
