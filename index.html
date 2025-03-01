@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Pong Multiplayer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #222;
+            font-family: Arial, sans-serif;
+            color: white;
+            flex-direction: column;
+        }
+        
+        canvas {
+            border: 2px solid white;
+            background-color: #000;
+            margin-bottom: 20px;
+        }
+        
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            width: 600px;
+            margin-bottom: 20px;
+        }
+        
+        .player-controls {
+            text-align: center;
+        }
+        
+        .score {
+            display: flex;
+            justify-content: space-around;
+            width: 600px;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #444;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin: 5px;
+        }
+        
+        button:hover {
+            background-color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>Pong Multiplayer</h1>
+    
+    <div class="score">
+        <div>Jogador 1: <span id="player1-score">0</span></div>
+        <div>Jogador 2: <span id="player2-score">0</span></div>
+    </div>
+    
+    <canvas id="pong-canvas" width="600" height="400"></canvas>
+    
+    <div class="controls">
+        <div class="player-controls">
+            <h3>Jogador 1</h3>
+            <p>Use W (cima) e S (baixo)</p>
+        </div>
+        
+        <div>
+            <button id="start-btn">Iniciar Jogo</button>
+            <button id="reset-btn">Reiniciar</button>
+        </div>
+        
+        <div class="player-controls">
+            <h3>Jogador 2</h3>
+            <p>Use ↑ (cima) e ↓ (baixo)</p>
+        </div>
+    </div>
+    
+    <script>
+        // Elementos do DOM
+        const canvas = document.getElementById('pong-canvas');
+        const ctx = canvas.getContext('2d');
+        const startBtn = document.getElementById('start-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const player1ScoreElement = document.getElementById('player1-score');
+        const player2ScoreElement = document.getElementById('player2-score');
+        
+        // Variáveis do jogo
+        let gameRunning = false;
+        let animationFrameId;
+        
+        // Configurações do jogo
+        const paddleWidth = 10;
+        const paddleHeight = 80;
+        const ballSize = 12;
+        const paddleSpeed = 8;
+        
+        // Estado do jogo
+        let gameState = {
+            player1: {
+                y: canvas.height / 2 - paddleHeight / 2,
+                score: 0,
+                moveUp: false,
+                moveDown: false
+            },
+            player2: {
+                y: canvas.height / 2 - paddleHeight / 2,
+                score: 0,
+                moveUp: false,
+                moveDown: false
+            },
+            ball: {
+                x: canvas.width / 2,
+                y: canvas.height / 2,
+                speedX: 5,
+                speedY: 5,
+                reset: function() {
+                    this.x = canvas.width / 2;
+                    this.y = canvas.height / 2;
+                    this.speedX = this.speedX > 0 ? -5 : 5;
+                    this.speedY = Math.random() * 10 - 5;
+                }
+            }
+        };
+        
+        // Controles do teclado
+        document.addEventListener('keydown', (e) => {
+            switch(e.key) {
+                case 'w': gameState.player1.moveUp = true; break;
+                case 's': gameState.player1.moveDown = true; break;
+                case 'ArrowUp': gameState.player2.moveUp = true; break;
+                case 'ArrowDown': gameState.player2.moveDown = true; break;
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            switch(e.key) {
+                case 'w': gameState.player1.moveUp = false; break;
+                case 's': gameState.player1.moveDown = false; break;
+                case 'ArrowUp': gameState.player2.moveUp = false; break;
+                case 'ArrowDown': gameState.player2.moveDown = false; break;
+            }
+        });
+        
+        // Renderizar o jogo
+        function render() {
+            // Limpar o canvas
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Desenhar linha do meio
+            ctx.setLineDash([10, 10]);
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2, 0);
+            ctx.lineTo(canvas.width / 2, canvas.height);
+            ctx.strokeStyle = 'white';
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            // Desenhar os paddles
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, gameState.player1.y, paddleWidth, paddleHeight);
+            ctx.fillRect(canvas.width - paddleWidth, gameState.player2.y, paddleWidth, paddleHeight);
+            
+            // Desenhar a bola
+            ctx.beginPath();
+            ctx.arc(gameState.ball.x, gameState.ball.y, ballSize / 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        // Atualizar o estado do jogo
+        function update() {
+            // Mover os paddles
+            if (gameState.player1.moveUp && gameState.player1.y > 0) {
+                gameState.player1.y -= paddleSpeed;
+            }
+            if (gameState.player1.moveDown && gameState.player1.y < canvas.height - paddleHeight) {
+                gameState.player1.y += paddleSpeed;
+            }
+            
+            if (gameState.player2.moveUp && gameState.player2.y > 0) {
+                gameState.player2.y -= paddleSpeed;
+            }
+            if (gameState.player2.moveDown && gameState.player2.y < canvas.height - paddleHeight) {
+                gameState.player2.y += paddleSpeed;
+            }
+            
+            // Mover a bola
+            gameState.ball.x += gameState.ball.speedX;
+            gameState.ball.y += gameState.ball.speedY;
+            
+            // Colisão com as bordas horizontais
+            if (gameState.ball.y < ballSize / 2 || gameState.ball.y > canvas.height - ballSize / 2) {
+                gameState.ball.speedY = -gameState.ball.speedY;
+            }
+            
+            // Colisão com o paddle esquerdo (player 1)
+            if (
+                gameState.ball.x - ballSize / 2 < paddleWidth && 
+                gameState.ball.y > gameState.player1.y && 
+                gameState.ball.y < gameState.player1.y + paddleHeight
+            ) {
+                gameState.ball.speedX = -gameState.ball.speedX;
+                
+                // Modificar o ângulo com base na posição do paddle
+                const relativeIntersectY = (gameState.player1.y + (paddleHeight / 2)) - gameState.ball.y;
+                const normalizedRelativeIntersectionY = relativeIntersectY / (paddleHeight / 2);
+                const bounceAngle = normalizedRelativeIntersectionY * (Math.PI / 4);
+                
+                gameState.ball.speedY = -Math.sin(bounceAngle) * Math.abs(gameState.ball.speedX);
+                
+                // Acelerar a bola ligeiramente
+                gameState.ball.speedX *= 1.05;
+            }
+            
+            // Colisão com o paddle direito (player 2)
+            if (
+                gameState.ball.x + ballSize / 2 > canvas.width - paddleWidth && 
+                gameState.ball.y > gameState.player2.y && 
+                gameState.ball.y < gameState.player2.y + paddleHeight
+            ) {
+                gameState.ball.speedX = -gameState.ball.speedX;
+                
+                // Modificar o ângulo com base na posição do paddle
+                const relativeIntersectY = (gameState.player2.y + (paddleHeight / 2)) - gameState.ball.y;
+                const normalizedRelativeIntersectionY = relativeIntersectY / (paddleHeight / 2);
+                const bounceAngle = normalizedRelativeIntersectionY * (Math.PI / 4);
+                
+                gameState.ball.speedY = -Math.sin(bounceAngle) * Math.abs(gameState.ball.speedX);
+                
+                // Acelerar a bola ligeiramente
+                gameState.ball.speedX *= 1.05;
+            }
+            
+            // Se a bola sair pela esquerda (ponto para o player 2)
+            if (gameState.ball.x < 0) {
+                gameState.player2.score++;
+                player2ScoreElement.textContent = gameState.player2.score;
+                gameState.ball.reset();
+            }
+            
+            // Se a bola sair pela direita (ponto para o player 1)
+            if (gameState.ball.x > canvas.width) {
+                gameState.player1.score++;
+                player1ScoreElement.textContent = gameState.player1.score;
+                gameState.ball.reset();
+            }
+        }
+        
+        // Loop principal do jogo
+        function gameLoop() {
+            if (gameRunning) {
+                update();
+                render();
+                animationFrameId = requestAnimationFrame(gameLoop);
+            }
+        }
+        
+        // Iniciar o jogo
+        startBtn.addEventListener('click', () => {
+            if (!gameRunning) {
+                gameRunning = true;
+                startBtn.textContent = 'Pausar';
+                gameLoop();
+            } else {
+                gameRunning = false;
+                startBtn.textContent = 'Continuar';
+                cancelAnimationFrame(animationFrameId);
+            }
+        });
+        
+        // Reiniciar o jogo
+        resetBtn.addEventListener('click', () => {
+            gameState.player1.y = canvas.height / 2 - paddleHeight / 2;
+            gameState.player2.y = canvas.height / 2 - paddleHeight / 2;
+            gameState.player1.score = 0;
+            gameState.player2.score = 0;
+            player1ScoreElement.textContent = '0';
+            player2ScoreElement.textContent = '0';
+            gameState.ball.reset();
+            
+            if (!gameRunning) {
+                render();
+            }
+        });
+        
+        // Renderização inicial
+        render();
+    </script>
+</body>
+</html>
